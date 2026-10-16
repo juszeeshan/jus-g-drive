@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>All Drives</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<meta name="theme-color" content="#1f4e79">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+:root{--bg:#f4f6f8;--panel:#fff;--ink:#1d2430;--mute:#667085;--line:#e2e5ea;--brand:#1f4e79;--hover:#eef3f8}
+@media(prefers-color-scheme:dark){:root{--bg:#14171c;--panel:#1c2027;--ink:#e8ebf0;--mute:#9aa3b2;--line:#2a303a;--brand:#7db3e6;--hover:#252b34}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{display:flex;font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+aside{width:260px;flex:none;background:var(--panel);border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:2px;overflow:auto}
+aside h1{font-size:18px;margin:0 8px 14px;color:var(--brand)}
+.nav{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:0;border-radius:8px;padding:9px 10px}
+.nav:hover,.nav.on{background:var(--hover)}
+.nav.on{font-weight:600}
+.nav span.t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}
+.x{border:0;background:none;color:var(--mute);padding:2px 6px;border-radius:6px}
+.x:hover{background:var(--line)}
+.add{margin-top:10px;border:1px dashed var(--line);background:none;border-radius:8px;padding:9px 10px;color:var(--brand);font-weight:600}
+main{flex:1;min-width:0;display:flex;flex-direction:column}
+header{display:flex;gap:12px;align-items:center;padding:14px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
+header input{flex:1;max-width:520px;padding:9px 14px;border:1px solid var(--line);border-radius:999px;background:var(--bg);color:var(--ink);font:inherit}
+.crumbs{padding:12px 20px 4px;color:var(--mute);display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.crumbs button{background:none;border:0;padding:2px 4px;border-radius:6px;color:var(--ink)}
+.crumbs button:hover{background:var(--hover)}
+.msg{margin:8px 20px;padding:10px 14px;border-radius:8px;background:var(--hover);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.msg button{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:4px 10px}
+.list{flex:1;overflow:auto;padding:4px 12px 24px}
+.row{display:grid;grid-template-columns:28px minmax(0,1fr) 190px 110px 80px 64px;cursor:pointer;gap:10px;align-items:center;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:10px 8px}
+.row:hover{background:var(--hover)}
+.row.head{color:var(--mute);font-size:13px;cursor:default;position:sticky;top:0;background:var(--bg)}
+.row.head:hover{background:var(--bg)}
+.nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ac{display:flex;align-items:center;gap:6px;color:var(--mute);font-size:13px;min-width:0}
+.ac span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sm{color:var(--mute);font-size:13px}
+.empty{padding:48px 20px;text-align:center;color:var(--mute)}
+.act{border:0;background:none;padding:2px 6px;border-radius:6px}
+.act:hover{background:var(--line)}
+#tools{padding:0 20px 6px;display:flex;gap:8px}
+#tools button{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:6px 12px}
+@media(max-width:760px){
+ body{flex-direction:column}
+ aside{width:auto;border-right:0;border-bottom:1px solid var(--line);flex-direction:row;flex-wrap:wrap;gap:4px;padding:8px}
+ aside h1{width:100%;margin:4px 8px}
+ .nav{width:auto}
+ .row{grid-template-columns:28px minmax(0,1fr) 70px 64px}
+ .row .ac,.row .sm.sz{display:none}
+ .row.head .ac,.row.head .sz{display:none}
+}
+</style>
+</head>
+<body>
+<aside>
+  <h1>All Drives</h1>
+  <div id="side"></div>
+  <button class="add" id="add">+ Add Google account</button>
+</aside>
+<main>
+  <header><input id="q" type="search" placeholder="Search files in all accounts" aria-label="Search files"></header>
+  <div class="crumbs" id="crumbs"></div>
+  <div id="tools"></div><input type="file" id="up" multiple hidden><div id="notes"></div>
+  <div class="list" id="list"></div>
+</main>
+<script>
+// Paste your Google OAuth Client ID between the quotes (see setup steps).
+const CLIENT_ID = 'PASTE_YOUR_CLIENT_ID_HERE';
+
+const SCOPE = 'https://www.googleapis.com/auth/drive';
+const COLORS = ['#2b7de9','#e8590c','#2f9e44','#ae3ec9','#d6336c','#0c8599','#f08c00','#5c7cfa'];
+const FOLDER = 'application/vnd.google-apps.folder';
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+let accts = [];
+try { accts = JSON.parse(localStorage.getItem('accts')) || []; } catch (e) {}
+const save = () => { try { localStorage.setItem('accts', JSON.stringify(accts)); } catch (e) {} };
+let view = { acct: null, trail: [], q: '' };
+let notes = [];
+
+function auth(hint) {
+  return new Promise((res, rej) => {
+    if (!window.google || !google.accounts) return rej(new Error('Google sign-in is still loading. Try again in a moment.'));
+    google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID, scope: SCOPE,
+      login_hint: hint || undefined, prompt: hint ? '' : 'select_account',
+      callback: r => r.error ? rej(new Error(r.error)) : res(r),
+      error_callback: e => rej(new Error(e.type || 'cancelled'))
+    }).requestAccessToken();
+  });
+}
+
+async function addAccount(hint) {
+  if (CLIENT_ID.startsWith('PASTE')) { notes = [{ text: 'Add your Client ID in index.html first (setup step 4).' }]; return render(); }
+  try {
+    const r = await auth(hint);
+    const me = await (await fetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)', { headers: { Authorization: 'Bearer ' + r.access_token } })).json();
+    const email = me.user.emailAddress;
+    let a = accts.find(x => x.email === email);
+    if (!a) { a = { email, color: COLORS[accts.length % COLORS.length] }; accts.push(a); }
+    a.token = r.access_token; a.exp = Date.now() + (r.expires_in - 60) * 1000;
+    save(); notes = []; view = { acct: null, trail: [], q: '' }; render(); refresh();
+  } catch (e) { notes = [{ text: 'Could not sign in: ' + e.message }]; render(); }
+}
+
+async function drive(a, params) {
+  const r = await fetch('https://www.googleapis.com/drive/v3/files?' + new URLSearchParams(params), { headers: { Authorization: 'Bearer ' + a.token } });
+  if (r.status === 401) { a.exp = 0; save(); throw new Error('expired'); }
+  if (!r.ok) throw new Error('Drive error ' + r.status);
+  return (await r.json()).files;
+}
+
+async function refresh() {
+  $('list').innerHTML = '<div class="empty">Loading…</div>';
+  const targets = view.acct ? accts.filter(a => a.email === view.acct) : accts;
+  const parent = view.trail.length ? view.trail[view.trail.length - 1].id : 'root';
+  const single = !!view.acct && !view.q;
+  const out = await Promise.all(targets.map(async a => {
+    if (!a.token || a.exp < Date.now()) return { a, expired: true, files: [] };
+    let q = 'trashed=false';
+    if (view.q) q += " and name contains '" + view.q.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
+    else if (view.acct) q += " and '" + parent + "' in parents";
+    try {
+      const files = await drive(a, { q, orderBy: single ? 'folder,name' : 'modifiedTime desc', pageSize: single || view.q ? 100 : 40, fields: 'files(id,name,mimeType,modifiedTime,size,webViewLink)' });
+      return { a, files };
+    } catch (e) { return { a, files: [], expired: e.message === 'expired', err: e.message }; }
+  }));
+  notes = [];
+  out.forEach(o => {
+    if (o.expired) notes.push({ text: o.a.email + ' needs to sign in again.', btn: 'Reconnect', fn: () => addAccount(o.a.email) });
+    else if (o.err) notes.push({ text: o.a.email + ': ' + o.err });
+  });
+  let rows = out.flatMap(o => o.files.map(f => ({ ...f, a: o.a })));
+  if (!single) rows.sort((x, y) => (y.modifiedTime || '').localeCompare(x.modifiedTime || ''));
+  render(rows);
+}
+
+const cur = () => accts.find(a => a.email === view.acct);
+const parentId = () => view.trail.length ? view.trail[view.trail.length - 1].id : 'root';
+async function api(a, method, path, body) {
+  const r = await fetch('https://www.googleapis.com/drive/v3/' + path, { method, headers: { Authorization: 'Bearer ' + a.token, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (r.status === 401) { a.exp = 0; save(); throw new Error('expired'); }
+  if (!r.ok) throw new Error('Drive error ' + r.status);
+  return r.json();
+}
+async function edit(a, fn) {
+  try { await fn(); await refresh(); }
+  catch (e) {
+    const ex = e.message === 'expired';
+    notes = [{ text: ex ? a.email + ' needs to sign in again.' : 'Could not do that: ' + e.message, btn: ex ? 'Reconnect' : '', fn: () => addAccount(a.email) }];
+    render(window._rows || []);
+  }
+}
+
+function size(n) { if (!n) return ''; n = +n; const u = ['B', 'KB', 'MB', 'GB']; let i = 0; while (n >= 1024 && i < 3) { n /= 1024; i++; } return n.toFixed(i ? 1 : 0) + ' ' + u[i]; }
+
+function render(rows) {
+  $('side').innerHTML = '<button class="nav ' + (!view.acct ? 'on' : '') + '" data-all="1"><span class="t">All accounts</span></button>' +
+    accts.map(a => '<div style="display:flex;align-items:center"><button class="nav ' + (view.acct === a.email ? 'on' : '') + '" data-a="' + esc(a.email) + '"><i class="dot" style="background:' + a.color + '"></i><span class="t">' + esc(a.email) + '</span></button><button class="x" data-rm="' + esc(a.email) + '" title="Remove account" aria-label="Remove ' + esc(a.email) + '">✕</button></div>').join('');
+
+  let c = '<button data-c="-1">' + (view.q ? 'Search: ' + esc(view.q) : (view.acct ? esc(view.acct) : 'Recent files, all accounts')) + '</button>';
+  if (!view.q) view.trail.forEach((t, i) => { c += ' / <button data-c="' + i + '">' + esc(t.name) + '</button>'; });
+  $('crumbs').innerHTML = c;
+  $('tools').innerHTML = view.acct && !view.q ? '<button data-new="1">New folder</button><button data-up="1">Upload files</button>' : '';
+
+  $('notes').innerHTML = notes.map((n, i) => '<div class="msg">' + esc(n.text) + (n.btn ? ' <button data-n="' + i + '">' + n.btn + '</button>' : '') + '</div>').join('');
+
+  if (!rows) return;
+  if (!accts.length) { $('list').innerHTML = '<div class="empty">No accounts yet. Use “Add Google account” to start.</div>'; return; }
+  if (!rows.length) { $('list').innerHTML = '<div class="empty">Nothing here.</div>'; return; }
+  window._rows = rows;
+  $('list').innerHTML = '<div class="row head"><span></span><span>Name</span><span class="ac">Account</span><span class="sm">Modified</span><span class="sm sz">Size</span><span></span></div>' +
+    rows.map((f, i) => '<div class="row" role="button" tabindex="0" data-r="' + i + '"><span>' + (f.mimeType === FOLDER ? '📁' : '📄') + '</span><span class="nm">' + esc(f.name) + '</span><span class="ac"><i class="dot" style="background:' + f.a.color + '"></i><span>' + esc(f.a.email) + '</span></span><span class="sm">' + (f.modifiedTime ? new Date(f.modifiedTime).toLocaleDateString() : '') + '</span><span class="sm sz">' + size(f.size) + '</span><span><button class="act" data-ren="' + i + '" title="Rename" aria-label="Rename">✏️</button><button class="act" data-del="' + i + '" title="Move to trash" aria-label="Move to trash">🗑️</button></span></div>').join('');
+}
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('button,[data-r]'); if (!t) return;
+  const d = t.dataset;
+  if (t.id === 'add') return addAccount();
+  if (d.all) { view = { acct: null, trail: [], q: '' }; $('q').value = ''; return refresh(); }
+  if (d.a) { view = { acct: d.a, trail: [], q: '' }; $('q').value = ''; return refresh(); }
+  if (d.rm) {
+    if (confirm('Remove ' + d.rm + ' from this app? Your files are not touched.')) {
+      accts = accts.filter(a => a.email !== d.rm); save();
+      if (view.acct === d.rm) view = { acct: null, trail: [], q: '' };
+      refresh();
+    }
+    return;
+  }
+  if (d.c !== undefined) { const i = +d.c; view.q = ''; $('q').value = ''; view.trail = view.trail.slice(0, i + 1); return refresh(); }
+  if (d.n !== undefined) return notes[+d.n].fn();
+  if (d.ren !== undefined) { const f = window._rows[+d.ren]; const n = prompt('New name', f.name); if (n && n !== f.name) edit(f.a, () => api(f.a, 'PATCH', 'files/' + f.id, { name: n })); return; }
+  if (d.del !== undefined) { const f = window._rows[+d.del]; if (confirm('Move "' + f.name + '" to trash? You can restore it from Drive.')) edit(f.a, () => api(f.a, 'PATCH', 'files/' + f.id, { trashed: true })); return; }
+  if (d.new) { const n = prompt('Folder name'); const a = cur(); if (n && a) edit(a, () => api(a, 'POST', 'files', { name: n, mimeType: FOLDER, parents: [parentId()] })); return; }
+  if (d.up) return $('up').click();
+  if (d.r !== undefined) {
+    const f = window._rows[+d.r];
+    if (f.mimeType === FOLDER) { view = { acct: f.a.email, trail: (view.acct === f.a.email && !view.q ? view.trail : []).concat({ id: f.id, name: f.name }), q: '' }; $('q').value = ''; return refresh(); }
+    if (f.webViewLink) window.open(f.webViewLink, '_blank', 'noopener');
+  }
+});
+
+$('q').addEventListener('keydown', e => { if (e.key === 'Enter') { view.q = $('q').value.trim(); refresh(); } });
+$('q').addEventListener('search', () => { if (!$('q').value) { view.q = ''; refresh(); } });
+
+$('up').addEventListener('change', e => {
+  const a = cur(); const files = [...e.target.files]; e.target.value = '';
+  if (!a || !files.length) return;
+  edit(a, async () => {
+    for (const f of files) {
+      const m = await api(a, 'POST', 'files', { name: f.name, parents: [parentId()] });
+      const r = await fetch('https://www.googleapis.com/upload/drive/v3/files/' + m.id + '?uploadType=media', { method: 'PATCH', headers: { Authorization: 'Bearer ' + a.token, 'Content-Type': f.type || 'application/octet-stream' }, body: f });
+      if (!r.ok) throw new Error('Upload failed ' + r.status);
+    }
+  });
+});
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.dataset && e.target.dataset.r !== undefined) e.target.click(); });
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+render([]); refresh();
+</script>
+</body>
+</html>
