@@ -7,7 +7,6 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <meta name="theme-color" content="#1f4e79">
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root{--bg:#f4f6f8;--panel:#fff;--ink:#1d2430;--mute:#667085;--line:#e2e5ea;--brand:#1f4e79;--hover:#eef3f8}
 @media(prefers-color-scheme:dark){:root{--bg:#14171c;--panel:#1c2027;--ink:#e8ebf0;--mute:#9aa3b2;--line:#2a303a;--brand:#7db3e6;--hover:#252b34}}
@@ -87,29 +86,31 @@ const save = () => { try { localStorage.setItem('accts', JSON.stringify(accts));
 let view = { acct: null, trail: [], q: '' };
 let notes = [];
 
-function auth(hint) {
-  return new Promise((res, rej) => {
-    if (!window.google || !google.accounts) return rej(new Error('Google sign-in is still loading. Try again in a moment.'));
-    google.accounts.oauth2.initTokenClient({
-      client_id: CLIENT_ID, scope: SCOPE,
-      login_hint: hint || undefined, prompt: hint ? '' : 'select_account',
-      callback: r => r.error ? rej(new Error(r.error)) : res(r),
-      error_callback: e => rej(new Error(e.type || 'cancelled'))
-    }).requestAccessToken();
-  });
+function signIn(hint) {
+  const p = new URLSearchParams({ client_id: CLIENT_ID, redirect_uri: location.origin + location.pathname, response_type: 'token', scope: SCOPE, include_granted_scopes: 'true' });
+  if (hint) p.set('login_hint', hint); else p.set('prompt', 'select_account');
+  location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + p;
 }
 
-async function addAccount(hint) {
+function addAccount(hint) {
   if (CLIENT_ID.startsWith('PASTE')) { notes = [{ text: 'Add your Client ID in index.html first (setup step 4).' }]; return render(); }
+  signIn(hint);
+}
+
+async function finishSignIn() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (!h.get('access_token') && !h.get('error')) return;
+  history.replaceState(null, '', location.pathname);
+  if (h.get('error')) { window._err = 'Could not sign in: ' + h.get('error'); return; }
   try {
-    const r = await auth(hint);
-    const me = await (await fetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)', { headers: { Authorization: 'Bearer ' + r.access_token } })).json();
+    const token = h.get('access_token');
+    const me = await (await fetch('https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)', { headers: { Authorization: 'Bearer ' + token } })).json();
     const email = me.user.emailAddress;
     let a = accts.find(x => x.email === email);
     if (!a) { a = { email, color: COLORS[accts.length % COLORS.length] }; accts.push(a); }
-    a.token = r.access_token; a.exp = Date.now() + (r.expires_in - 60) * 1000;
-    save(); notes = []; view = { acct: null, trail: [], q: '' }; render(); refresh();
-  } catch (e) { notes = [{ text: 'Could not sign in: ' + e.message }]; render(); }
+    a.token = token; a.exp = Date.now() + (+h.get('expires_in') - 60) * 1000;
+    save(); view = { acct: null, trail: [], q: '' };
+  } catch (e) { window._err = 'Could not sign in: ' + e.message; }
 }
 
 async function drive(a, params) {
@@ -226,7 +227,7 @@ $('up').addEventListener('change', e => {
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.dataset && e.target.dataset.r !== undefined) e.target.click(); });
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-render([]); refresh();
+finishSignIn().then(async () => { await refresh(); if (window._err) { notes = [{ text: window._err }]; render(window._rows || []); } });
 </script>
 </body>
 </html>
